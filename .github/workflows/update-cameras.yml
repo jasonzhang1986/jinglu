@@ -1,0 +1,55 @@
+name: Update camera snapshot
+
+on:
+  schedule:
+    - cron: '17 21 * * *' # Asia/Shanghai 05:17; GitHub may delay scheduled jobs.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: camera-snapshot-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch and validate public camera snapshot
+        run: python3 update_cameras.py
+      - name: Commit validated snapshot
+        id: snapshot
+        run: |
+          git add cameras.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'data: refresh public camera snapshot'
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      # A push using GITHUB_TOKEN does not start another Pages build automatically.
+      - name: Request GitHub Pages rebuild
+        if: steps.snapshot.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          url = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/pages/builds'
+          request = urllib.request.Request(url, data=b'{}', method='POST', headers={
+              'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'Content-Type': 'application/json',
+          })
+          with urllib.request.urlopen(request, timeout=30) as response:
+              print('Requested Pages rebuild:', response.status)
+          PY
