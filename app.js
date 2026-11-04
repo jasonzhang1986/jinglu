@@ -1,6 +1,7 @@
 import {gcjToWgs,inBeijing,makeIndex,checkRoute,detourPoint,avoidPolygons} from './geo.js?v=20261104-amap';
 import {createAutocomplete} from './autocomplete.js?v=20261104-amap';
 import {createAmapShare} from './amap.js?v=20261104-amap';
+import {createCameraData,snapshotRevision} from './camera-data.js?v=20261104-camera-refresh';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pois=[
@@ -16,6 +17,7 @@ const pois=[
 let map,cameraLayer,routeLayer,endLayer,index,cameras=[],origin=null,destination=null,pick='destination',routes=[],selected=0,controller=null,busy=false,showCameras=true,planningVersion=0;
 const autocomplete={};
 let amapShare;
+let cameraSnapshot,cameraData,cameraRenderer;
 const endpointMarkers={};
 function status(message,kind=''){ $('status').hidden=false;$('status').className='status '+kind;$('status').textContent=message; }
 function invalidate(){planningVersion++;if(controller)controller.abort();routes=[];amapShare?.close();$('routes').hidden=true;$('status').hidden=true;$('welcome').hidden=false;routeLayer?.clearLayers();if(busy)setBusy(false);}
@@ -101,7 +103,31 @@ function renderRoutes(){
   for(const step of routes[selected].legs.flatMap(l=>l.steps)){const li=document.createElement('li');li.textContent=(verbs[step.maneuver.type]||'沿道路行驶')+(step.maneuver.modifier?' · '+(modifiers[step.maneuver.modifier]||step.maneuver.modifier):'')+(step.name?'，'+step.name:'')+'（'+(step.distance>=1000?(step.distance/1000).toFixed(1)+' 公里':Math.round(step.distance)+' 米')+'）';$('steps').appendChild(li);}
 }
 function cameraPopup(c){return '<div class="camera-popup"><strong>'+esc(c.name)+'</strong><small>来源更新：'+esc(c.updated)+'<br>所有方向保守纳入检查</small><a href="'+esc(c.url)+'" target="_blank" rel="noopener noreferrer">查看原站详情 ↗</a></div>';}
-function exportRoute(){const r=routes[selected];if(!r)return;const data={type:'FeatureCollection',metadata:{generated:new Date().toISOString(),source:'https://www.jinjing365.com/wap/',snapshot:'2026-10-29',bufferMeters:+$('radius').value,nearbyCameraCount:r.hits.length,note:r.hits.length?'未完全避开已收录点位':'仅通过当前快照的几何检查，不保证实际无摄像头'},features:[{type:'Feature',properties:{name:'京路路线',distanceMeters:r.distance,durationSeconds:r.duration},geometry:r.geometry},...r.hits.map(h=>({type:'Feature',properties:{name:h.camera.name,url:h.camera.url,distanceMeters:Math.round(h.distance)},geometry:{type:'Point',coordinates:h.camera.point}}))]};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/geo+json'})),a=document.createElement('a');a.href=url;a.download='京路-路线.geojson';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportRoute(){const r=routes[selected];if(!r)return;const data={type:'FeatureCollection',metadata:{generated:new Date().toISOString(),source:'https://www.jinjing365.com/wap/',snapshot:cameraSnapshot?.updated,snapshotRevision:cameraSnapshot?.revision,bufferMeters:+$('radius').value,nearbyCameraCount:r.hits.length,note:r.hits.length?'未完全避开已收录点位':'仅通过当前快照的几何检查，不保证实际无摄像头'},features:[{type:'Feature',properties:{name:'京路路线',distanceMeters:r.distance,durationSeconds:r.duration},geometry:r.geometry},...r.hits.map(h=>({type:'Feature',properties:{name:h.camera.name,url:h.camera.url,distanceMeters:Math.round(h.distance)},geometry:{type:'Point',coordinates:h.camera.point}}))]};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/geo+json'})),a=document.createElement('a');a.href=url;a.download='京路-路线.geojson';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function applyCameraData(data){
+  const changed=!cameraSnapshot||snapshotRevision(cameraSnapshot)!==snapshotRevision(data),hadData=!!index;cameraSnapshot=data;
+  if(changed){
+    if(hadData)invalidate();
+    cameras=data.cameras.map(c=>({...c,point:gcjToWgs(c.gcj)}));index=makeIndex(cameras);
+    if(cameraLayer){cameraLayer.clearLayers();cameraRenderer??=L.canvas({padding:.3});for(const c of cameras)L.circleMarker([c.point[1],c.point[0]],{renderer:cameraRenderer,radius:3,weight:1,color:'#fff',fillColor:'#be785b',fillOpacity:.8,bubblingMouseEvents:false}).addTo(cameraLayer).bindPopup(()=>cameraPopup(c));}
+    if(hadData)status('摄像头点位已更新，请重新规划路线，以使用最新数据。','warning');
+  }
+  $('cameraCount').textContent=cameras.length.toLocaleString('en-US');$('sourceUpdated').textContent=data.updated.slice(5).replace('-','.');
+  $('dataSummary').textContent=cameras.length.toLocaleString('en-US')+' 点位 · '+data.updated.replaceAll('-','.')+' 更新';
+  $('aboutSourceUpdated').textContent=data.updated;$('aboutSourceFetched').textContent=data.fetched||'未知';
+  if(!busy)$('plan').disabled=false;
+}
+function cameraDataState(state){
+  const button=$('refreshCameras');button.disabled=state.kind==='checking';button.textContent=state.kind==='checking'?'检查中…':'更新';
+  const note=$('cameraRefreshState');
+  if(state.kind==='checking'){note.textContent='正在检查摄像头更新…';note.classList.remove('is-error');return;}
+  const checked=state.checkedAt?new Date(state.checkedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'尚未成功检查';
+  button.title='上次成功检查：'+checked+'；点击立即检查，自动检查间隔 24 小时。';
+  if(state.kind==='error'){
+    note.textContent=state.hasCache?'更新检查失败，继续使用已缓存点位；下次打开会重试。':'点位加载失败，请联网后点击“更新”重试。';note.classList.add('is-error');
+    if(!state.hasCache){$('dataSummary').textContent='点位数据不可用';$('plan').disabled=true;status('摄像头数据加载失败，已暂停路线规划。请联网后重试。','error');}
+  }else{note.textContent='上次检查 '+checked+' · 满 24 小时后再次打开将自动检查';note.classList.remove('is-error');}
+}
 function initMap(){
   if(!window.L){status('地图库未能加载，请刷新页面；仍可通过地点输入进行路线计算。','warning');return;}
   map=L.map('map',{zoomControl:false,preferCanvas:true}).setView([39.943,116.39],11);L.control.zoom({position:'bottomright'}).addTo(map);
@@ -126,8 +152,11 @@ async function init(){
     if(endpointMarkers[which]){endLayer?.removeLayer(endpointMarkers[which]);delete endpointMarkers[which];}
   }});
   for(const button of document.querySelectorAll('[data-place]'))button.onclick=()=>{const p=pois.find(x=>x.name===button.dataset.place);setPoint('destination',p.point,p.name);status('目的地已设置。'+(!origin?'请获取当前位置或设置起点。':''));};
-  try{const response=await fetch('cameras.json');if(!response.ok)throw new Error('点位文件请求失败');const data=await response.json();cameras=data.cameras.map(c=>({...c,point:gcjToWgs(c.gcj)}));if(!cameras.length)throw new Error('点位文件为空');index=makeIndex(cameras);$('cameraCount').textContent=cameras.length.toLocaleString('en-US');$('dataSummary').textContent=cameras.length.toLocaleString('en-US')+' 点位 · 2026.10.29 快照';
-    if(cameraLayer){const renderer=L.canvas({padding:.3});for(const c of cameras)L.circleMarker([c.point[1],c.point[0]],{renderer,radius:3,weight:1,color:'#fff',fillColor:'#be785b',fillOpacity:.8,bubblingMouseEvents:false}).addTo(cameraLayer).bindPopup(()=>cameraPopup(c));}$('plan').disabled=false;
-  }catch(e){status('摄像头数据加载失败，已暂停路线规划。请刷新重试。','error');$('dataSummary').textContent='点位数据不可用';}
+  cameraData=createCameraData({onData:applyCameraData,onState:cameraDataState});
+  const checkCameras=(force=false)=>cameraData.check({force}).catch(()=>{});
+  $('refreshCameras').onclick=()=>checkCameras(true);
+  window.addEventListener('pageshow',()=>checkCameras());
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkCameras();});
+  await checkCameras();
 }
 init();

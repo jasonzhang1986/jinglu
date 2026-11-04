@@ -5,8 +5,8 @@
   <meta name="theme-color" content="#133e38"><meta name="description" content="北京驾车路线规划，结合公开摄像头点位比较路线并检查避让情况。">
   <title>京路 · 让每一程心中有数</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='13' fill='%23133e38'/%3E%3Cpath d='M12 35L24 10l12 25-12-6z' fill='%23e2f0a7'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css?v=20261104-amap">
-  <script src="vendor/leaflet.js" defer></script><script type="module" src="app.js?v=20261104-amap"></script>
+  <link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css?v=20261104-camera-refresh">
+  <script src="vendor/leaflet.js" defer></script><script type="module" src="app.js?v=20261104-camera-refresh"></script>
 </head>
 <body>
 <header class="topbar">
@@ -35,17 +35,17 @@
       <section id="welcome"><div class="section-heading"><h2>先选一个目的地</h2><span>快捷地点</span></div><div class="quick-places"><button data-place="北京南站"><span>▧</span>北京南站 <small>丰台区</small></button><button data-place="首都国际机场"><span>✈</span>首都国际机场 <small>顺义区</small></button><button data-place="奥林匹克森林公园"><span>♧</span>奥森公园 <small>朝阳区</small></button></div><div class="guide-card"><span class="guide-icon">⌖</span><div><strong>也可以直接在地图上选点</strong><p>使用地图左上方的起点 / 终点切换。</p></div></div></section>
       <div class="data-note"><span class="note-icon">i</span><p>基于公开点位快照，无法保证全部覆盖或实时准确。无进京证、限行等规定需另行核实；请遵守道路标志。</p></div>
     </div>
-    <footer class="panel-footer"><span class="live-dot"></span><span id="dataSummary">正在读取点位…</span><a href="https://www.jinjing365.com/wap/" target="_blank" rel="noopener noreferrer">来源 ↗</a></footer>
+    <footer class="panel-footer"><div class="camera-footer-row"><span class="live-dot"></span><span id="dataSummary">正在读取点位…</span><button id="refreshCameras" type="button" title="立即检查摄像头更新">更新</button><a href="https://www.jinjing365.com/wap/" target="_blank" rel="noopener noreferrer">来源 ↗</a></div><div id="cameraRefreshState" role="status" aria-live="polite">首次打开或距上次检查满 24 小时后，自动检查更新。</div></footer>
   </aside>
   <section class="map-area" aria-label="路线和摄像头地图">
     <div id="map"></div>
     <div class="map-toolbar"><div class="segmented" aria-label="地图选点"><button id="pickOrigin" type="button">设为起点</button><button id="pickDestination" type="button" class="active">设为终点</button></div><button id="layers" class="map-action" aria-pressed="true">◉ <span>摄像头点位</span></button></div>
     <div class="map-key"><span><i class="key-camera"></i>公开摄像头</span><span><i class="key-route"></i>选中路线</span><span class="map-hint">点击地图选取终点</span></div>
-    <div class="map-badge"><span class="live-dot"></span><div><strong id="cameraCount">—</strong><span>个已收录点位</span></div><i></i><div><strong>10.29</strong><span>来源标注更新</span></div></div>
+    <div class="map-badge"><span class="live-dot"></span><div><strong id="cameraCount">—</strong><span>个已收录点位</span></div><i></i><div><strong id="sourceUpdated">—</strong><span>来源标注更新</span></div></div>
     <button id="fit" class="fit-button" title="查看起终点及路线" aria-label="查看起终点及路线">⌗</button>
   </section>
 </main>
-<dialog id="about"><button id="closeAbout" class="dialog-close" aria-label="关闭说明">×</button><div class="eyebrow">ABOUT JINGLU</div><h2>出发前，多一份了解。</h2><p>京路从 OSRM 获取真实道路路线，尝试使用 Valhalla 排除摄像头附近道路与缓冲区域，并通过途经点搜索绕行。每条路线都会按你选择的半径重新检查。公开服务对排除区域数量和周长有限制，搜索范围有限，无法保证找到所有可行路线。</p><p>“已避开”仅表示路线几何未进入当前点位快照的缓冲区。拍摄方向按保守方式全部纳入，桥梁、上下层道路与坐标误差可能影响结果。</p><p>公开摄像头数据来自进京网，快照采集于 2026-11-02，来源标注更新于 2026-10-29；不是实时同步。路线不含实时路况，也不会自动判断进京证、车牌限号、临时交通管制等条件。</p><p>定位只在点击定位按钮并授权后执行。输入地名时会将联想关键词发送至 Photon（OpenStreetMap 地点数据）；路线规划发送起终点和绕行途经点至 OSRM / Valhalla，区域避让请求还包含公开摄像头坐标；地图由 OpenStreetMap 提供。打开高德链接时，会向高德发送起终点和途经点；复制和分享的文本也包含这些位置。应用不保存位置和路线，第三方服务有各自的隐私政策。</p><p>点位原始坐标为 GCJ-02，已换算为地图使用的 WGS-84；传给高德时转回 GCJ-02。可手动输入 <code>116.391,39.907</code> 格式的 WGS-84 坐标。高德会根据途经点重新算路，不能继承本站的完整轨迹或摄像头避让规则，请核对路线。网页提供路线参考及 GeoJSON 导出，不提供实时转向导航。</p><a href="https://www.jinjing365.com/wap/" target="_blank" rel="noopener noreferrer">查看原始数据来源 ↗</a></dialog>
+<dialog id="about"><button id="closeAbout" class="dialog-close" aria-label="关闭说明">×</button><div class="eyebrow">ABOUT JINGLU</div><h2>出发前，多一份了解。</h2><p>京路从 OSRM 获取真实道路路线，尝试使用 Valhalla 排除摄像头附近道路与缓冲区域，并通过途经点搜索绕行。每条路线都会按你选择的半径重新检查。公开服务对排除区域数量和周长有限制，搜索范围有限，无法保证找到所有可行路线。</p><p>“已避开”仅表示路线几何未进入当前点位快照的缓冲区。拍摄方向按保守方式全部纳入，桥梁、上下层道路与坐标误差可能影响结果。</p><p>公开摄像头数据来自进京网，最近同步于 <span id="aboutSourceFetched">读取中</span>，来源标注更新于 <span id="aboutSourceUpdated">读取中</span>。仓库每天定时抓取，首次打开或距上次成功检查满 24 小时后会拉取最新已发布快照；也可点击页面底部“更新”手动检查。自动任务可能延迟，不是实时同步。路线不含实时路况，也不会自动判断进京证、车牌限号、临时交通管制等条件。</p><p>定位只在点击定位按钮并授权后执行。输入地名时会将联想关键词发送至 Photon（OpenStreetMap 地点数据）；路线规划发送起终点和绕行途经点至 OSRM / Valhalla，区域避让请求还包含公开摄像头坐标；地图由 OpenStreetMap 提供。打开高德链接时，会向高德发送起终点和途经点；复制和分享的文本也包含这些位置。浏览器仅缓存公开摄像头点位及检查时间，不保存你的位置和路线；第三方服务有各自的隐私政策。</p><p>点位原始坐标为 GCJ-02，已换算为地图使用的 WGS-84；传给高德时转回 GCJ-02。可手动输入 <code>116.391,39.907</code> 格式的 WGS-84 坐标。高德会根据途经点重新算路，不能继承本站的完整轨迹或摄像头避让规则，请核对路线。网页提供路线参考及 GeoJSON 导出，不提供实时转向导航。</p><a href="https://www.jinjing365.com/wap/" target="_blank" rel="noopener noreferrer">查看原始数据来源 ↗</a></dialog>
 <dialog id="amapShare" aria-labelledby="amapTitle"><button id="closeAmapShare" class="dialog-close" aria-label="关闭高德分享">×</button><div class="eyebrow">CONTINUE WITH AMAP</div><h2 id="amapTitle">把这段旅程，带到高德。</h2><strong id="amapJourney" class="amap-journey"></strong><p id="amapSummary"></p><div class="amap-caution">高德将重新计算路线，无法继承本站的完整轨迹和摄像头避让规则。请在高德中核对路线后出发。</div><a id="amapNative" class="amap-native-link" hidden>在高德 App 打开完整途经点路线 ↗</a><p id="amapWebHint"></p><div id="amapSegments"></div><div class="amap-copy-actions"><button id="amapCopy" type="button">复制高德路线链接</button><button id="amapSystemShare" type="button" hidden>系统分享 ↗</button></div><p id="amapMessage" role="status" aria-live="polite"></p><textarea id="amapManualCopy" readonly aria-label="手动复制高德路线链接" hidden></textarea><p class="amap-privacy">打开后将向高德发送起终点和途经点，复制及分享的内容也包含这些位置。</p></dialog>
 </body>
 </html>
