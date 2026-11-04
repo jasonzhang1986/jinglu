@@ -5,8 +5,8 @@
   <meta name="theme-color" content="#133e38"><meta name="description" content="北京驾车路线规划，结合公开摄像头点位比较路线并检查避让情况。">
   <title>京路 · 让每一程心中有数</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='13' fill='%23133e38'/%3E%3Cpath d='M12 35L24 10l12 25-12-6z' fill='%23e2f0a7'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css?v=20261104-camera-refresh">
-  <script src="vendor/leaflet.js" defer></script><script type="module" src="app.js?v=20261104-camera-refresh"></script>
+  <link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css?v=20261104-routing-fix">
+  <script src="vendor/leaflet.js" defer></script><script type="module" src="app.js?v=20261104-routing-fix"></script>
 </head>
 <body>
 <header class="topbar">
@@ -31,7 +31,7 @@
         <button id="cancel" type="button" class="cancel" hidden>停止搜索</button>
       </form>
       <div id="status" class="status" role="status" aria-live="polite" hidden></div>
-      <section id="routes" hidden><div class="section-heading"><h2>路线方案</h2><span id="routeCount"></span></div><div id="routeCards"></div><button id="shareAmap" class="amap-share-button" type="button"><span>↗ 分享路线到高德</span><span>导航 / 复制链接</span></button><p class="amap-inline-note">高德会重新算路，摄像头避让规则无法同步。</p><button id="export" class="export-button">↓ 导出当前路线 GeoJSON</button><details id="directions"><summary>查看道路指引</summary><ol id="steps"></ol></details></section>
+      <section id="routes" hidden><div class="section-heading"><h2>路线方案</h2><span id="routeCount"></span></div><div id="routeCards"></div><p id="routeSnapNotice" class="route-snap-notice" hidden></p><button id="shareAmap" class="amap-share-button" type="button"><span>↗ 分享路线到高德</span><span>导航 / 复制链接</span></button><p class="amap-inline-note">高德会重新算路，摄像头避让规则无法同步。</p><button id="export" class="export-button">↓ 导出当前路线 GeoJSON</button><details id="directions"><summary>查看道路指引</summary><ol id="steps"></ol></details></section>
       <section id="welcome"><div class="section-heading"><h2>先选一个目的地</h2><span>快捷地点</span></div><div class="quick-places"><button data-place="北京南站"><span>▧</span>北京南站 <small>丰台区</small></button><button data-place="首都国际机场"><span>✈</span>首都国际机场 <small>顺义区</small></button><button data-place="奥林匹克森林公园"><span>♧</span>奥森公园 <small>朝阳区</small></button></div><div class="guide-card"><span class="guide-icon">⌖</span><div><strong>也可以直接在地图上选点</strong><p>使用地图左上方的起点 / 终点切换。</p></div></div></section>
       <div class="data-note"><span class="note-icon">i</span><p>基于公开点位快照，无法保证全部覆盖或实时准确。无进京证、限行等规定需另行核实；请遵守道路标志。</p></div>
     </div>

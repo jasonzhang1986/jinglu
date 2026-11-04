@@ -1,7 +1,8 @@
-import {gcjToWgs,inBeijing,makeIndex,checkRoute,detourPoint,avoidPolygons} from './geo.js?v=20261104-amap';
+import {gcjToWgs,inBeijing,makeIndex,checkRoute,detourPoint} from './geo.js?v=20261104-amap';
 import {createAutocomplete} from './autocomplete.js?v=20261104-amap';
 import {createAmapShare} from './amap.js?v=20261104-amap';
 import {createCameraData,snapshotRevision} from './camera-data.js?v=20261104-camera-refresh';
+import {createRoutingClient,routeSnapNotice} from './routing.js?v=20261104-routing-fix';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pois=[
@@ -18,6 +19,7 @@ let map,cameraLayer,routeLayer,endLayer,index,cameras=[],origin=null,destination
 const autocomplete={};
 let amapShare;
 let cameraSnapshot,cameraData,cameraRenderer;
+const routingClient=createRoutingClient({onProgress:message=>status(message,'loading')});
 const endpointMarkers={};
 function status(message,kind=''){ $('status').hidden=false;$('status').className='status '+kind;$('status').textContent=message; }
 function invalidate(){planningVersion++;if(controller)controller.abort();routes=[];amapShare?.close();$('routes').hidden=true;$('status').hidden=true;$('welcome').hidden=false;routeLayer?.clearLayers();if(busy)setBusy(false);}
@@ -45,16 +47,8 @@ function checkCandidate(r,radius){
   // Include the short connectors to the engine's snapped road positions conservatively.
   return checkRoute([origin,...r.geometry.coordinates,destination],index,radius).map(h=>({...h,segment:Math.max(0,h.segment-1)}));
 }
-async function fetchRoutes(points,signal){
-  const url='https://router.project-osrm.org/route/v1/driving/'+points.map(p=>p.map(n=>n.toFixed(6)).join(',')).join(';')+'?alternatives=true&overview=full&geometries=geojson&steps=true&continue_straight=false&radiuses='+points.map(()=>100).join(';');
-  const response=await fetch(url,{signal:AbortSignal.any([signal,AbortSignal.timeout(22000)])});if(!response.ok)throw new Error('路线服务暂不可用，请稍后重试。');const data=await response.json();
-  if(data.code!=='Ok'||!data.routes?.length)throw new Error(data.code==='NoSegment'?'选点附近 100 米内未找到可通行道路，请调整到道路上。':'未找到可通行的道路路线，请调整起终点。');return data.routes.map(r=>({...r,via:points.slice(1,-1)}));
-}
-async function fetchAvoidRoute(points,excluded,radius,signal){
-  const payload={locations:points.map(p=>({lon:p[0],lat:p[1],radius:100})),costing:'auto',format:'osrm',shape_format:'geojson',alternates:2,exclude_locations:excluded.slice(0,50).map(c=>({lon:c.point[0],lat:c.point[1]})),exclude_polygons:avoidPolygons(excluded,radius)};
-  const response=await fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.any([signal,AbortSignal.timeout(22000)])});
-  const data=await response.json();if(!response.ok||data.code!=='Ok'||!data.routes?.length)throw new Error('区域避让服务未返回可通行路线。');return data.routes.map(r=>({...r,via:[]}));
-}
+function fetchRoutes(points,signal){return routingClient.routes(points,signal);}
+function fetchAvoidRoute(points,excluded,radius,signal){return routingClient.avoid(points,excluded,radius,signal);}
 function fit(){if(!map)return;const p=routes[selected]?.geometry.coordinates;if(p?.length)map.fitBounds(L.latLngBounds(p.map(x=>[x[1],x[0]])),{padding:[40,120]});else if(origin&&destination)map.fitBounds([[origin[1],origin[0]],[destination[1],destination[0]]],{padding:[50,80],maxZoom:15});else if(origin||destination){const a=origin||destination;map.setView([a[1],a[0]],14);}}
 async function plan(event){
   event?.preventDefault();if(busy)return;if(!index){status('点位数据尚未就绪，请稍后重试。','error');return;}
@@ -97,8 +91,10 @@ async function plan(event){
 }
 function renderRoutes(){
   $('routes').hidden=false;$('routeCount').textContent=routes.length+' 个候选';$('routeCards').replaceChildren();
+  const snapNotice=routeSnapNotice(routes[selected]);$('routeSnapNotice').textContent=snapNotice;$('routeSnapNotice').hidden=!snapNotice;
   routes.forEach((r,i)=>{const b=document.createElement('button');b.type='button';b.className='route-card'+(selected===i?' active':'');b.setAttribute('aria-pressed',String(selected===i));b.innerHTML='<div class="route-top"><span class="route-title">'+(i===0?(r.hits.length?'点位较少方案':'推荐避让方案'):'备选方案 '+(i+1))+'</span><span class="route-chip '+(!r.hits.length?'clear':'')+'">'+(r.hits.length?r.hits.length+' 个临近点位':'已避开收录点位')+'</span></div><div class="route-main"><strong>'+Math.ceil(r.duration/60)+'</strong><small>分钟</small><span class="sep">/</span><strong>'+(r.distance/1000).toFixed(1)+'</strong><small>公里</small></div><p class="route-meta">'+(r.hits.length?'仍有点位进入 '+$('radius').value+' 米缓冲区':'全线未进入 '+$('radius').value+' 米点位缓冲区')+' · 无实时路况</p>';b.onclick=()=>{selected=i;renderRoutes();fit();};$('routeCards').appendChild(b);});
   if(map){routeLayer.clearLayers();routes.forEach((r,i)=>{if(i===selected)return;L.polyline(r.geometry.coordinates.map(p=>[p[1],p[0]]),{color:'#91a595',weight:3,opacity:.55}).addTo(routeLayer);});const r=routes[selected];L.polyline(r.geometry.coordinates.map(p=>[p[1],p[0]]),{color:'white',weight:9,opacity:.95}).addTo(routeLayer);L.polyline(r.geometry.coordinates.map(p=>[p[1],p[0]]),{color:r.hits.length?'#b47f45':'#2d7963',weight:5,opacity:1}).addTo(routeLayer);r.hits.forEach(h=>L.circle([h.camera.point[1],h.camera.point[0]],{radius:+$('radius').value,weight:1,color:'#bc7352',fillOpacity:.14}).addTo(routeLayer).bindPopup(cameraPopup(h.camera)));}
+  if(map){const r=routes[selected],pairs=[[origin,r.geometry.coordinates[0]],[destination,r.geometry.coordinates.at(-1)]];pairs.forEach(([a,b],i)=>{if(r.snapDistances?.[i===0?0:r.snapDistances.length-1]>=30)L.polyline([[a[1],a[0]],[b[1],b[0]]],{color:'#859281',weight:2,dashArray:'4 5',interactive:false}).addTo(routeLayer);});}
   $('steps').replaceChildren();const verbs={'turn':'转弯','new name':'继续行驶','depart':'从起点出发','arrive':'到达终点','merge':'汇入','on ramp':'驶入匝道','off ramp':'驶出匝道','fork':'在岔路口行驶','roundabout':'驶入环岛','rotary':'驶入环岛','continue':'继续行驶','end of road':'在道路尽头转弯','notification':'注意道路变化','use lane':'按车道指示行驶','exit roundabout':'驶离环岛'};const modifiers={'left':'左转','right':'右转','slight left':'向左前方','slight right':'向右前方','sharp left':'向左急转','sharp right':'向右急转','straight':'直行','uturn':'掉头'};
   for(const step of routes[selected].legs.flatMap(l=>l.steps)){const li=document.createElement('li');li.textContent=(verbs[step.maneuver.type]||'沿道路行驶')+(step.maneuver.modifier?' · '+(modifiers[step.maneuver.modifier]||step.maneuver.modifier):'')+(step.name?'，'+step.name:'')+'（'+(step.distance>=1000?(step.distance/1000).toFixed(1)+' 公里':Math.round(step.distance)+' 米')+'）';$('steps').appendChild(li);}
 }

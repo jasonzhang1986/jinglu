@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test camera-data.test.js && python3 -m unittest test_update_cameras.py",
+    "test": "node --test camera-data.test.js routing.test.js && python3 -m unittest test_update_cameras.py",
     "update-cameras": "python3 update_cameras.py"
   }
 }
